@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Multi-port Iframe</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: sans-serif;
+    overflow: hidden; /* prevent scrollbars on body */
+  }
+  #main-container {
+    display: flex;
+    height: 100%;
+  }
+  #sidebar {
+    width: 200px;
+    flex-shrink: 0; /* Don't allow sidebar to shrink */
+    background-color: #f4f4f4;
+    padding: 20px;
+    box-sizing: border-box;
+    border-right: 1px solid #ddd;
+    overflow-y: auto; /* Add scroll if links overflow */
+  }
+  #sidebar h2 {
+    margin-top: 0;
+  }
+  #sidebar a {
+    display: block;
+    padding: 10px 15px;
+    text-decoration: none;
+    color: #007bff;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  #sidebar a:hover, #sidebar a.active {
+    background-color: #007bff;
+    color: white;
+  }
+  #content {
+    flex-grow: 1;
+  }
+  iframe {
+    border: none;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+</head>
+<body>
+  <div id="main-container">
+    <div id="sidebar">
+      <h2>Services</h2>
+      <a href="/proxy/8265" target="content-iframe" class="active" onclick="setActive(this)">Port 8265</a>
+      <a href="/proxy/8266" target="content-iframe" onclick="setActive(this)">Port 8266</a>
+      <a href="/proxy/8267" target="content-iframe" onclick="setActive(this)">Port 8267</a>
+    </div>
+    <div id="content">
+      <iframe name="content-iframe" src="/proxy/8265"></iframe>
+    </div>
+  </div>
+  <script>
+    function setActive(el) {
+      var links = document.querySelectorAll('#sidebar a');
+      for (var i = 0; i < links.length; i++) {
+        links[i].classList.remove('active');
+      }
+      el.classList.add('active');
+    }
+  </script>
+</body>
+</html>
