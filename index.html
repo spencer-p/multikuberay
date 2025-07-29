@@ -90,7 +90,7 @@
             <details open>
             <summary><h4>{{ $clusterName }}</h4></summary>
             {{ range $uid, $cluster := . }}
-              <a href="/d/{{ $cluster.RayClusterName }}"
+              <a href="/dash/{{ $cluster.RayClusterName }}"
                  {{if eq $cluster.RayClusterName $active}}class="active"{{end}}
                  >{{ $cluster.RayClusterName }}</a>
             {{ end }}

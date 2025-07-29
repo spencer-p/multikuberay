@@ -42,7 +42,7 @@ func main() {
 	go WatchAll(ctx, clients, indexer)
 
 	http.HandleFunc("/", handleIndex)
-	http.HandleFunc("/d/{cluster...}", handleDashboard)
+	http.HandleFunc("/dash/{cluster...}", handleDashboard)
 	http.HandleFunc("/proxy/{port}/", handleProxy)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "ray.svg")
@@ -60,7 +60,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := all[0].RayClusterName
-	http.Redirect(w, r, "/d/"+name, http.StatusFound)
+	http.Redirect(w, r, "/dash/"+name, http.StatusFound)
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
