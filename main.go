@@ -3,17 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 )
 
 // PageData holds the dynamic data for the template.
 type PageData struct {
-	ClusterTree map[string]map[string]RayClusterHandle
+	ClusterTree map[string]map[string]map[string]map[string]RayClusterHandle
+	TargetPort  int
+	TargetName  string
 }
+
+var indexer *ClusterIndexer
 
 type RayClusterHandle struct {
 	kc             *kubernetes.Clientset
@@ -36,8 +42,8 @@ func main() {
 	}
 
 	ctx := context.Background()
-	watcher := ServiceWatcher{}
-	go watcher.RunAll(ctx, clients)
+	indexer = NewClusterIndexer(NewPortAllocater(8270))
+	go WatchAll(ctx, clients, indexer)
 
 	// TODO: Start a port forward for every cluster.
 
@@ -45,16 +51,33 @@ func main() {
 	http.HandleFunc("/d/{cluster...}", handleDashboard)
 	http.HandleFunc("/proxy/{port}/", handleProxy)
 
-	fmt.Println("Server listening on port 8080")
-	http.ListenAndServe(":8080", nil)
+	log.Println("Server listening on port 8080")
+	err = http.ListenAndServe(":8080", nil)
+	log.Printf("ListenAndServe: %v", err)
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	cluster := "foo"
-	http.Redirect(w, r, "/d/"+cluster, http.StatusFound)
+	all := indexer.FuzzyMatch("")
+	if len(all) == 0 {
+		http.Error(w, "you have no rayclusters", http.StatusNotFound)
+		return
+	}
+	name := all[0].RayClusterName
+	http.Redirect(w, r, "/d/"+name, http.StatusFound)
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	clusterName := r.PathValue("cluster")
+	if clusterName == "" {
+		http.Error(w, "no cluster name", http.StatusBadRequest)
+		return
+	}
+
+	matches := indexer.FuzzyMatch(clusterName)
+	if len(matches) == 0 {
+		http.Error(w, fmt.Sprintf("no clusters match %q", html.EscapeString(clusterName)), http.StatusBadRequest)
+		return
+	}
 
 	// Parse the template file
 	tmpl, err := template.ParseFiles("index.html")
@@ -63,13 +86,35 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the data object
-	data := PageData{}
+	// Need to generate a tree by project > location > cluster name > raycluster
+	clusterTree := indexer.List()
+	newTree := make(map[string]map[string]map[string]map[string]RayClusterHandle)
+	for contextName, clusters := range clusterTree {
+		parts := strings.Split(contextName, "_")
+		project, location, clusterName := parts[1], parts[2], parts[3]
+		if _, ok := newTree[project]; !ok {
+			newTree[project] = make(map[string]map[string]map[string]RayClusterHandle)
+		}
+		if _, ok := newTree[project][location]; !ok {
+			newTree[project][location] = make(map[string]map[string]RayClusterHandle)
+		}
+		if _, ok := newTree[project][location][clusterName]; !ok {
+			newTree[project][location][clusterName] = make(map[string]RayClusterHandle)
+		}
+		newTree[project][location][clusterName] = clusters
+	}
+
+	// Create the data object.
+	data := PageData{
+		ClusterTree: newTree,
+		TargetPort:  *matches[0].Port,
+		TargetName:  matches[0].RayClusterName,
+	}
 
 	// Execute the template with the data
 	w.Header().Set("Content-Type", "text/html")
 	err = tmpl.Execute(w, data)
 	if err != nil {
-		http.Error(w, "Could not execute template: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("Could not execute template: %v", err.Error())
 	}
 }

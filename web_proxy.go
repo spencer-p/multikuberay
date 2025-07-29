@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -33,7 +34,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = targetURL.Scheme
 	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/proxy/"+port)
 
-	fmt.Println("proxy to", r.URL.Path)
+	log.Printf("Proxy %s to %s", r.URL.Path, port)
 
 	// Serve the request using the proxy
 	proxy.ServeHTTP(w, r)

@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"maps"
 	"strings"
 	"sync"
 )
 
-type ClusterIndex struct {
-	portAlloc PortAllocater
+type ClusterIndexer struct {
+	portAlloc *PortAllocater
 
 	m sync.RWMutex
 	// clusterTree is ray clusters indexed by context name then UUID.
@@ -19,7 +18,15 @@ type ClusterIndex struct {
 	forwardStopFns map[string]func()
 }
 
-func (c *ClusterIndex) Insert(cluster RayClusterHandle) {
+func NewClusterIndexer(portAllocater *PortAllocater) *ClusterIndexer {
+	return &ClusterIndexer{
+		portAlloc:      portAllocater,
+		clusterTree:    make(map[string]map[string]RayClusterHandle),
+		forwardStopFns: make(map[string]func()),
+	}
+}
+
+func (c *ClusterIndexer) Insert(cluster RayClusterHandle) {
 	// Double check the cluster is not already allocated and mapped.
 	if c.clusterTree[cluster.ContextName] != nil {
 		if _, ok := c.clusterTree[cluster.ContextName][cluster.UID]; ok {
@@ -37,11 +44,12 @@ func (c *ClusterIndex) Insert(cluster RayClusterHandle) {
 
 	// Start a port forwarder.
 	ctx, cancel := context.WithCancel(context.Background())
+	log.Printf("Forwarding %s on port %d", cluster.RayClusterName, port)
 	go PortForward(ctx, port, cluster)
 	c.forwardStopFns[cluster.UID] = cancel
 }
 
-func (c *ClusterIndex) Delete(contextName string, uid string) {
+func (c *ClusterIndexer) Delete(contextName string, uid string) {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -56,13 +64,13 @@ func (c *ClusterIndex) Delete(contextName string, uid string) {
 	delete(c.clusterTree[contextName], uid)
 }
 
-func (c *ClusterIndex) DeleteContext(name string) {
+func (c *ClusterIndexer) DeleteContext(name string) {
 	for uid := range c.clusterTree[name] {
 		c.Delete(name, uid)
 	}
 }
 
-func (c *ClusterIndex) List() map[string]map[string]RayClusterHandle {
+func (c *ClusterIndexer) List() map[string]map[string]RayClusterHandle {
 	c.m.RLock()
 	defer c.m.RUnlock()
 
@@ -73,26 +81,22 @@ func (c *ClusterIndex) List() map[string]map[string]RayClusterHandle {
 	return result
 }
 
-func (c *ClusterIndex) FuzzyMatch(in string) (uid string, err error) {
+func (c *ClusterIndexer) FuzzyMatch(in string) []RayClusterHandle {
 	c.m.RLock()
 	defer c.m.RUnlock()
 
-	result := ""
+	var result []RayClusterHandle
 	for context := range c.clusterTree {
-		for uid, cluster := range c.clusterTree[context] {
+		for _, cluster := range c.clusterTree[context] {
 			if strings.HasPrefix(cluster.RayClusterName, in) {
-				if result == "" {
-					result = uid
-				} else {
-					return "", fmt.Errorf("ambiguous cluster; at least two prefix matches (%q and %q)", result, cluster.RayClusterName)
-				}
+				result = append(result, cluster)
 			}
 		}
 	}
-	return uid, nil
+	return result
 }
 
-func (c *ClusterIndex) storeCluster(handle RayClusterHandle) {
+func (c *ClusterIndexer) storeCluster(handle RayClusterHandle) {
 	if _, ok := c.clusterTree[handle.ContextName]; !ok {
 		c.clusterTree[handle.ContextName] = make(map[string]RayClusterHandle)
 	}

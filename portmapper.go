@@ -10,6 +10,14 @@ type PortAllocater struct {
 	mapping   map[string]int
 }
 
+func NewPortAllocater(minPort int) *PortAllocater {
+	return &PortAllocater{
+		allocStart: minPort,
+		allocated:  make(map[int]struct{}),
+		mapping:    make(map[string]int),
+	}
+}
+
 func (p *PortAllocater) Allocate(uid string) int {
 	p.m.Lock()
 	defer p.m.Unlock()

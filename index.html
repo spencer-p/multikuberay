@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Multi-port Iframe</title>
+<title>{{.TargetName}}</title>
 <style>
   html, body {
     margin: 0;
@@ -23,7 +23,16 @@
     border-right: 1px solid #ddd;
     overflow-y: auto; /* Add scroll if links overflow */
   }
+  #sidebar h1 {
+    margin-top: 0;
+  }
   #sidebar h2 {
+    margin-top: 0;
+  }
+  #sidebar h3 {
+    margin-top: 0;
+  }
+  #sidebar h4 {
     margin-top: 0;
   }
   #sidebar a {
@@ -51,23 +60,32 @@
 <body>
   <div id="main-container">
     <div id="sidebar">
-      <h2>Services</h2>
-      <a href="/proxy/8265" target="content-iframe" class="active" onclick="setActive(this)">Port 8265</a>
-      <a href="/proxy/8266" target="content-iframe" onclick="setActive(this)">Port 8266</a>
-      <a href="/proxy/8267" target="content-iframe" onclick="setActive(this)">Port 8267</a>
+      {{ $active := .TargetName }}
+      <h1>Ray Clusters</h1>
+      {{ range $project, $_ := .ClusterTree }}
+        <details open>
+        <summary><h2>{{ $project }}</h2></summary>
+        {{ range $location, $_ := . }}
+          <details open>
+          <summary><h3>{{ $location }}</h3></summary>
+          {{ range $clusterName, $_ := . }}
+            <details open>
+            <summary><h4>{{ $clusterName }}</h4></summary>
+            {{ range $uid, $cluster := . }}
+              <a href="/d/{{ $cluster.RayClusterName }}"
+                 {{if eq $cluster.RayClusterName $active}}class="active"{{end}}
+                 >{{ $cluster.RayClusterName }}</a>
+            {{ end }}
+            </details>
+          {{ end }}
+          </details>
+        {{ end }}
+        </details>
+      {{ end }}
     </div>
     <div id="content">
-      <iframe name="content-iframe" src="/proxy/8265"></iframe>
+      <iframe name="content-iframe" src="/proxy/{{.TargetPort}}"></iframe>
     </div>
   </div>
-  <script>
-    function setActive(el) {
-      var links = document.querySelectorAll('#sidebar a');
-      for (var i = 0; i < links.length; i++) {
-        links[i].classList.remove('active');
-      }
-      el.classList.add('active');
-    }
-  </script>
 </body>
 </html>
