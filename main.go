@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 
 	"k8s.io/client-go/kubernetes"
@@ -33,6 +38,19 @@ type RayClusterHandle struct {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		serveMain()
+		return
+	}
+	switch os.Args[1] {
+	case "serve":
+		serveMain()
+	case "run":
+		runMain()
+	}
+}
+
+func serveMain() {
 	clients, err := discoverKubeconfigs()
 	if err != nil {
 		log.Fatalf("failed to get contexts: %v", err)
@@ -46,6 +64,7 @@ func main() {
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/dash/{uid}", handleDashboard)
 	http.HandleFunc("/proxy/{uid}/", handleProxy)
+	http.HandleFunc("/api/v1/match", handleMatch)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "ray.svg")
 	})
@@ -117,5 +136,88 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	err = tmpl.Execute(w, data)
 	if err != nil {
 		log.Printf("Could not execute template: %v", err.Error())
+	}
+}
+
+func handleMatch(w http.ResponseWriter, r *http.Request) {
+	clusterName := r.URL.Query().Get("prefix")
+	matches := indexer.FuzzyMatch(clusterName)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(matches); err != nil {
+		http.Error(w, "Failed to encode matches to json", http.StatusInternalServerError)
+	}
+}
+
+func runMain() {
+	// The command is something like "run my-cluster -- python3 myfile.py"
+	// The cluster name is optional.
+	// Find the cluster name argument (if present) and then store the rest of
+	// the command after -- in another var.
+	var prefix string
+	var command []string
+	if len(os.Args) > 2 {
+		if os.Args[2] != "--" {
+			prefix = os.Args[2]
+		}
+	}
+
+	for i, arg := range os.Args {
+		if arg == "--" {
+			command = os.Args[i+1:]
+			break
+		}
+	}
+
+	if len(command) == 0 {
+		log.Fatalf("no command specified")
+	}
+
+	// Fetch the match handler with the given prefix on localhost port 8080.
+	resp, err := http.Get("http://localhost:8080/api/v1/match?prefix=" + prefix)
+	if err != nil {
+		log.Fatalf("failed to connect to multikuberay server: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var matches []RayClusterHandle
+	if err := json.NewDecoder(resp.Body).Decode(&matches); err != nil {
+		log.Fatalf("failed to decode response: %v", err)
+	}
+
+	// If there are multiple matches, print out the multiple matches and exit
+	// with an error.
+	if len(matches) == 0 {
+		log.Fatalf("no clusters found")
+	}
+	if len(matches) > 1 {
+		log.Printf("multiple clusters found:")
+		for _, match := range matches {
+			log.Printf("  %s", match.RayClusterName)
+		}
+		os.Exit(1)
+	}
+
+	// If there is one match, identify its target port.
+	match := matches[0]
+	if match.Port == nil {
+		log.Fatalf("cluster has no port assigned")
+	}
+	port := *match.Port
+
+	// Set up a command to run the user's command.
+	// Set the env var RAY_ADDRESS=http://localhost:TARGET_PORT.
+	// Then exec the command.
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("RAY_ADDRESS=http://localhost:%d", port))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	err = cmd.Run()
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
+		os.Exit(exitErr.ExitCode())
+	}
+	if err != nil {
+		log.Fatalf("command failed: %v", err)
 	}
 }
