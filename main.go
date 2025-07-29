@@ -169,30 +169,34 @@ func runMain() {
 	}
 
 	if len(command) == 0 {
-		log.Fatalf("no command specified")
+		fmt.Fprintf(os.Stderr, "no command specified\n")
+		os.Exit(1)
 	}
 
 	// Fetch the match handler with the given prefix on localhost port 8080.
 	resp, err := http.Get("http://localhost:8080/api/v1/match?prefix=" + prefix)
 	if err != nil {
-		log.Fatalf("failed to connect to multikuberay server: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to connect to multikuberay server: %v\n", err)
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
 	var matches []RayClusterHandle
 	if err := json.NewDecoder(resp.Body).Decode(&matches); err != nil {
-		log.Fatalf("failed to decode response: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to decode response: %v\n", err)
+		os.Exit(1)
 	}
 
 	// If there are multiple matches, print out the multiple matches and exit
 	// with an error.
 	if len(matches) == 0 {
-		log.Fatalf("no clusters found")
+		fmt.Fprintf(os.Stderr, "no clusters found\n")
+		os.Exit(1)
 	}
 	if len(matches) > 1 {
-		log.Printf("multiple clusters found:")
+		fmt.Fprintf(os.Stderr, "multiple clusters found:\n")
 		for _, match := range matches {
-			log.Printf("  %s", match.RayClusterName)
+			fmt.Fprintf(os.Stderr, "  %s\n", match.RayClusterName)
 		}
 		os.Exit(1)
 	}
@@ -200,7 +204,8 @@ func runMain() {
 	// If there is one match, identify its target port.
 	match := matches[0]
 	if match.Port == nil {
-		log.Fatalf("cluster has no port assigned")
+		fmt.Fprintf(os.Stderr, "cluster has no port assigned\n")
+		os.Exit(1)
 	}
 	port := *match.Port
 
@@ -218,6 +223,7 @@ func runMain() {
 		os.Exit(exitErr.ExitCode())
 	}
 	if err != nil {
-		log.Fatalf("command failed: %v", err)
+		fmt.Fprintf(os.Stderr, "command failed: %v\n", err)
+		os.Exit(1)
 	}
 }
