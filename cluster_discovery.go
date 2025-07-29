@@ -96,13 +96,14 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 			continue
 		}
 
+	receiveLoop:
 		for {
 			select {
 			case event, ok := <-watcher.ResultChan():
 				if !ok {
-					log.Println("Watcher channel closed, restarting watch.")
+					log.Printf("Watcher channel for %s closed, restarting watch.", clusterContext)
 					watcher.Stop()
-					break
+					break receiveLoop
 				}
 
 				service, ok := event.Object.(*v1.Service)

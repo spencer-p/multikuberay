@@ -38,7 +38,7 @@ func PortForward(ctx context.Context, port int, handle RayClusterHandle) {
 		if now.Sub(lastErr) > 30*time.Second {
 			backoff = initBackoff
 		} else {
-			backoff = max(2*backoff, maxBackoff)
+			backoff = min(2*backoff, maxBackoff)
 		}
 		lastErr = now
 
