@@ -32,10 +32,6 @@ type RayClusterHandle struct {
 }
 
 func main() {
-	// We'll fetch the list of clusters/contexts.
-	// In each cluster, we'll fetch all the ray clusters.
-	// Clusters are ID'd by cluster name, then namespace, then ray cluster.
-	// Alternately, the UUID of the cluster.
 	clients, err := discoverKubeconfigs()
 	if err != nil {
 		log.Fatalf("failed to get contexts: %v", err)
@@ -45,11 +41,12 @@ func main() {
 	indexer = NewClusterIndexer(NewPortAllocater(8270))
 	go WatchAll(ctx, clients, indexer)
 
-	// TODO: Start a port forward for every cluster.
-
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/d/{cluster...}", handleDashboard)
 	http.HandleFunc("/proxy/{port}/", handleProxy)
+	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "ray.svg")
+	})
 
 	log.Println("Server listening on port 8080")
 	err = http.ListenAndServe(":8080", nil)
