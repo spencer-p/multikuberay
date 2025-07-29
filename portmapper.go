@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
 
 type PortAllocater struct {
 	allocStart int
@@ -16,6 +19,15 @@ func NewPortAllocater(minPort int) *PortAllocater {
 		allocated:  make(map[int]struct{}),
 		mapping:    make(map[string]int),
 	}
+}
+
+func (p *PortAllocater) Mapping(uid string) (int, error) {
+	p.m.Lock()
+	defer p.m.Unlock()
+	if port, ok := p.mapping[uid]; ok {
+		return port, nil
+	}
+	return 0, errors.New("not found")
 }
 
 func (p *PortAllocater) Allocate(uid string) int {

@@ -12,36 +12,41 @@ import (
 )
 
 func handleProxy(w http.ResponseWriter, r *http.Request) {
-	port := r.PathValue("port")
-	if port == "" {
-		http.Error(w, "Port not specified", http.StatusBadRequest)
+	uid := r.PathValue("uid")
+	if uid == "" {
+		http.Error(w, "uid not specified", http.StatusBadRequest)
 		return
+	}
+
+	port, err := portMapper.Mapping(uid)
+	if err != nil {
+		http.Error(w, "uid not found", http.StatusBadRequest)
 	}
 
 	// Create the target URL for the reverse proxy
 	targetURL := &url.URL{
 		Scheme: "http",
-		Host:   "localhost:" + port,
+		Host:   fmt.Sprintf("localhost:%d", port),
 	}
 
 	// Create the reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-	proxy.ModifyResponse = addBase(port)
+	proxy.ModifyResponse = addBase(uid)
 
 	// Update the request host to the target's host
 	r.Host = targetURL.Host
 	r.URL.Host = targetURL.Host
 	r.URL.Scheme = targetURL.Scheme
-	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/proxy/"+port)
+	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/proxy/"+uid)
 
-	log.Printf("Proxy %s to %s", r.URL.Path, port)
+	log.Printf("Proxy %s to %d", r.URL.Path, port)
 
 	// Serve the request using the proxy
 	proxy.ServeHTTP(w, r)
 }
 
-func addBase(port string) func(resp *http.Response) error {
-	snippet := []byte(fmt.Sprintf(`<head><base href="/proxy/%s/"/>`, port))
+func addBase(slug string) func(resp *http.Response) error {
+	snippet := []byte(fmt.Sprintf(`<head><base href="/proxy/%s/"/>`, slug))
 
 	return func(resp *http.Response) error {
 		if typ := resp.Header.Get("Content-Type"); !strings.HasPrefix(typ, "text/html") {

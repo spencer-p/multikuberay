@@ -15,11 +15,14 @@ import (
 // PageData holds the dynamic data for the template.
 type PageData struct {
 	ClusterTree map[string]map[string]map[string]map[string]RayClusterHandle
-	TargetPort  int
+	TargetUID   string
 	TargetName  string
 }
 
-var indexer *ClusterIndexer
+var (
+	portMapper *PortAllocater
+	indexer    *ClusterIndexer
+)
 
 type RayClusterHandle struct {
 	kc             *kubernetes.Clientset
@@ -38,12 +41,13 @@ func main() {
 	}
 
 	ctx := context.Background()
-	indexer = NewClusterIndexer(NewPortAllocater(8270))
+	portMapper = NewPortAllocater(8270)
+	indexer = NewClusterIndexer(portMapper)
 	go WatchAll(ctx, clients, indexer)
 
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/dash/{cluster...}", handleDashboard)
-	http.HandleFunc("/proxy/{port}/", handleProxy)
+	http.HandleFunc("/proxy/{uid}/", handleProxy)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "ray.svg")
 	})
@@ -104,7 +108,7 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Create the data object.
 	data := PageData{
 		ClusterTree: newTree,
-		TargetPort:  *matches[0].Port,
+		TargetUID:   matches[0].UID,
 		TargetName:  matches[0].RayClusterName,
 	}
 
