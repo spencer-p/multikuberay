@@ -78,7 +78,7 @@
 <body>
   <div id="main-container">
     <div id="sidebar">
-      {{ $active := .TargetName }}
+      {{ $active := .TargetUID }}
       <h1>Ray Clusters</h1>
       {{ range $project, $_ := .ClusterTree }}
         <details open>
@@ -90,8 +90,8 @@
             <details open>
             <summary><h4>{{ $clusterName }}</h4></summary>
             {{ range $uid, $cluster := . }}
-              <a href="/dash/{{ $cluster.RayClusterName }}"
-                 {{if eq $cluster.RayClusterName $active}}class="active"{{end}}
+              <a href="/dash/{{ $cluster.UID }}"
+                 {{if eq $cluster.UID $active}}class="active"{{end}}
                  >{{ $cluster.RayClusterName }}</a>
             {{ end }}
             </details>

@@ -21,6 +21,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 	port, err := portMapper.Mapping(uid)
 	if err != nil {
 		http.Error(w, "uid not found", http.StatusBadRequest)
+		return
 	}
 
 	// Create the target URL for the reverse proxy

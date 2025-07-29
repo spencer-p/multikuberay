@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -46,7 +44,7 @@ func main() {
 	go WatchAll(ctx, clients, indexer)
 
 	http.HandleFunc("/", handleIndex)
-	http.HandleFunc("/dash/{cluster...}", handleDashboard)
+	http.HandleFunc("/dash/{uid}", handleDashboard)
 	http.HandleFunc("/proxy/{uid}/", handleProxy)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "ray.svg")
@@ -63,20 +61,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "you have no rayclusters", http.StatusNotFound)
 		return
 	}
-	name := all[0].RayClusterName
-	http.Redirect(w, r, "/dash/"+name, http.StatusFound)
+	uid := all[0].UID
+	http.Redirect(w, r, "/dash/"+uid, http.StatusFound)
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
-	clusterName := r.PathValue("cluster")
-	if clusterName == "" {
-		http.Error(w, "no cluster name", http.StatusBadRequest)
-		return
-	}
-
-	matches := indexer.FuzzyMatch(clusterName)
-	if len(matches) == 0 {
-		http.Error(w, fmt.Sprintf("no clusters match %q", html.EscapeString(clusterName)), http.StatusBadRequest)
+	uid := r.PathValue("uid")
+	if uid == "" {
+		http.Error(w, "no uid", http.StatusBadRequest)
 		return
 	}
 
@@ -86,6 +78,8 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not parse template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	targetClusterName := "unknown"
 
 	// Need to generate a tree by project > location > cluster name > raycluster
 	clusterTree := indexer.List()
@@ -103,13 +97,19 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 			newTree[project][location][clusterName] = make(map[string]RayClusterHandle)
 		}
 		newTree[project][location][clusterName] = clusters
+
+		for _, cluster := range clusters {
+			if cluster.UID == uid {
+				targetClusterName = cluster.RayClusterName
+			}
+		}
 	}
 
 	// Create the data object.
 	data := PageData{
 		ClusterTree: newTree,
-		TargetUID:   matches[0].UID,
-		TargetName:  matches[0].RayClusterName,
+		TargetUID:   uid,
+		TargetName:  targetClusterName,
 	}
 
 	// Execute the template with the data
