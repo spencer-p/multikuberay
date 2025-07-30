@@ -102,19 +102,26 @@
       {{ end }}
     </div>
     <div id="content">
-      <iframe name="content-iframe" src="/proxy/{{.TargetUID}}"></iframe>
+      <iframe name="content-iframe" src="/proxy/{{.TargetUID}}{{.IframePath}}"></iframe>
     </div>
   </div>
   <script>
     const iframe = document.querySelector('iframe[name="content-iframe"]');
     if (iframe) {
       let lastKnownHref = '';
+      const iframeSrcPathLen = window.location.origin.length + iframe.getAttribute('src').length - {{len .IframePath}};
+
       const logIframeLocation = () => {
         try {
           const currentHref = iframe.contentWindow.location.href;
           if (currentHref !== lastKnownHref) {
             lastKnownHref = currentHref;
-            console.log('iframe location changed:', currentHref);
+            let relativePath = currentHref.slice(iframeSrcPathLen);
+            if (relativePath === '') {
+              relativePath = '/';
+            }
+            console.log('iframe location changed:', relativePath);
+            document.cookie = "last_known_iframe_location=" + encodeURIComponent(relativePath) + ";path=" + window.location.pathname;
           }
         } catch (e) {
           // Stop polling if we hit a cross-origin boundary

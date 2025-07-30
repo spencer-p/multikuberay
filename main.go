@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -20,6 +21,7 @@ type PageData struct {
 	ClusterTree map[string]map[string]map[string]map[string]RayClusterHandle
 	TargetUID   string
 	TargetName  string
+	IframePath  string
 }
 
 var (
@@ -129,6 +131,7 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ClusterTree: newTree,
 		TargetUID:   uid,
 		TargetName:  targetClusterName,
+		IframePath:  findIframePath(r),
 	}
 
 	// Execute the template with the data
@@ -137,6 +140,22 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Could not execute template: %v", err.Error())
 	}
+}
+
+func findIframePath(r *http.Request) string {
+	cookie, err := r.Cookie("last_known_iframe_location")
+	if err != nil {
+		return "/"
+	}
+	path, err := url.PathUnescape(cookie.Value)
+	if err != nil {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		log.Printf("last iframe path %q does not seem right", path)
+		return "/"
+	}
+	return path
 }
 
 func handleMatch(w http.ResponseWriter, r *http.Request) {
