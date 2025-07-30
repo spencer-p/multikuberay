@@ -87,8 +87,9 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 
 	for ctx.Err() == nil {
 		watcher, err := kc.CoreV1().Services(v1.NamespaceAll).Watch(ctx, metav1.ListOptions{
-			LabelSelector:   "ray.io/node-type=head",
-			ResourceVersion: resourceVersion,
+			LabelSelector:       "ray.io/node-type=head",
+			ResourceVersion:     resourceVersion,
+			AllowWatchBookmarks: true,
 		})
 		if err != nil {
 			log.Printf("Error creating watcher for %s: %v. Retrying...", clusterContext, err)
@@ -96,39 +97,25 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 			continue
 		}
 
-	receiveLoop:
-		for {
-			select {
-			case event, ok := <-watcher.ResultChan():
-				if !ok {
-					log.Printf("Watcher channel for %s closed, restarting watch.", clusterContext)
-					watcher.Stop()
-					break receiveLoop
-				}
+		for event := range watcher.ResultChan() {
+			service, ok := event.Object.(*v1.Service)
+			if !ok {
+				continue
+			}
 
-				service, ok := event.Object.(*v1.Service)
-				if !ok {
-					continue
-				}
+			resourceVersion = service.ResourceVersion
 
-				resourceVersion = service.ResourceVersion
-
-				switch event.Type {
-				case watch.Added:
-					indexer.Insert(makeHandle(clusterContext, kc, *service))
-				case watch.Deleted:
-					indexer.Delete(clusterContext, string(service.UID))
-				default:
-					// Other events are a no-op. We assume nothing of value is
-					// changing.
-				}
-
-			case <-ctx.Done():
-				log.Println("Context cancelled, stopping watcher.")
-				watcher.Stop()
-				return
+			switch event.Type {
+			case watch.Added:
+				indexer.Insert(makeHandle(clusterContext, kc, *service))
+			case watch.Deleted:
+				indexer.Delete(clusterContext, string(service.UID))
+			default:
+				// Other events are a no-op. We assume nothing of value is
+				// changing.
 			}
 		}
+		log.Printf("Watch channel for %s closed, restarting watch.", clusterContext)
 	}
 }
 
