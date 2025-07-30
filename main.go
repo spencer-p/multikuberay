@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,8 +26,11 @@ type PageData struct {
 }
 
 var (
-	portMapper *PortAllocater
-	indexer    *ClusterIndexer
+	portMapper    *PortAllocater
+	indexer       *ClusterIndexer
+	indexTemplate *template.Template
+	//go:embed index.html
+	indexBytes string
 )
 
 type RayClusterHandle struct {
@@ -37,6 +41,14 @@ type RayClusterHandle struct {
 	ContextName    string
 	UID            string
 	Port           *int
+}
+
+func init() {
+	var err error
+	indexTemplate, err = template.New("index").Parse(indexBytes)
+	if err != nil {
+		log.Fatalf("failed to parse index.html: %v", err)
+	}
 }
 
 func main() {
@@ -93,13 +105,6 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the template file
-	tmpl, err := template.ParseFiles("index.html")
-	if err != nil {
-		http.Error(w, "Could not parse template: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	targetClusterName := "unknown"
 
 	// Need to generate a tree by project > location > cluster name > raycluster
@@ -136,7 +141,7 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Execute the template with the data
 	w.Header().Set("Content-Type", "text/html")
-	err = tmpl.Execute(w, data)
+	err := indexTemplate.Execute(w, data)
 	if err != nil {
 		log.Printf("Could not execute template: %v", err.Error())
 	}
