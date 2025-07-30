@@ -105,5 +105,36 @@
       <iframe name="content-iframe" src="/proxy/{{.TargetUID}}"></iframe>
     </div>
   </div>
+  <script>
+    const iframe = document.querySelector('iframe[name="content-iframe"]');
+    if (iframe) {
+      let lastKnownHref = '';
+      const logIframeLocation = () => {
+        try {
+          const currentHref = iframe.contentWindow.location.href;
+          if (currentHref !== lastKnownHref) {
+            lastKnownHref = currentHref;
+            console.log('iframe location changed:', currentHref);
+          }
+        } catch (e) {
+          // Stop polling if we hit a cross-origin boundary
+          if (intervalId) {
+            clearInterval(intervalId);
+          }
+          console.log('Could not access iframe location due to cross-origin restrictions.');
+        }
+      };
+
+      let intervalId = null;
+      iframe.onload = () => {
+        // Clear any existing interval
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+        logIframeLocation(); // Log the initial location
+        intervalId = setInterval(logIframeLocation, 1000); // Check every second
+      };
+    }
+  </script>
 </body>
 </html>
