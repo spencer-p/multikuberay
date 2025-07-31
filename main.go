@@ -31,6 +31,8 @@ var (
 	indexTemplate *template.Template
 	//go:embed index.html
 	indexBytes string
+	//go:embed ray.svg
+	faviconBytes []byte
 )
 
 type RayClusterHandle struct {
@@ -80,7 +82,8 @@ func serveMain() {
 	http.HandleFunc("/proxy/{uid}/", handleProxy)
 	http.HandleFunc("/api/v1/match", handleMatch)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "ray.svg")
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Write(faviconBytes)
 	})
 
 	log.Println("Server listening on port 8080")
