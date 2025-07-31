@@ -79,7 +79,7 @@ func watchClients(ctx context.Context) (AddedChan <-chan ClientEvent, DeletedCha
 		}
 
 		// Loop and send added or removed contexts.
-		prevClients := make(map[string]*kubernetes.Clientset)
+		prevClients := clients
 		for {
 			select {
 			case <-ticker.C:
