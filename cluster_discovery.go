@@ -54,6 +54,60 @@ func discoverKubeconfigs() (map[string]*kubernetes.Clientset, error) {
 	return clientsets, nil
 }
 
+type ClientEvent struct {
+	contextName string
+	kc          *kubernetes.Clientset
+}
+
+func watchClients(ctx context.Context) (AddedChan <-chan ClientEvent, DeletedChan <-chan ClientEvent) {
+	added := make(chan ClientEvent)
+	deleted := make(chan ClientEvent)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		defer close(added)
+		defer close(deleted)
+
+		// Send initial list of contexts.
+		clients, err := discoverKubeconfigs()
+		if err != nil {
+			log.Printf("Failed initial list of kube configs: %v", err)
+		}
+		for name, kc := range clients {
+			added <- ClientEvent{contextName: name, kc: kc}
+		}
+
+		// Loop and send added or removed contexts.
+		prevClients := make(map[string]*kubernetes.Clientset)
+		for {
+			select {
+			case <-ticker.C:
+				clients, err := discoverKubeconfigs()
+				if err != nil {
+					log.Printf("Failed to find kube configs: %v", err)
+				}
+				for name, kc := range clients {
+					if _, ok := prevClients[name]; !ok {
+						// New client, not in prev clients.
+						added <- ClientEvent{contextName: name, kc: kc}
+					}
+				}
+				for name, kc := range prevClients {
+					if _, ok := clients[name]; !ok {
+						// Client removed, in old but not new.
+						deleted <- ClientEvent{contextName: name, kc: kc}
+					}
+				}
+				prevClients = clients
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return added, deleted
+}
+
 // discoverRayClusters accepts a kubernetes client as an argument and finds
 // all services with the label "ray.io/node-type=head". It returns a slice of
 // v1.Service objects.
@@ -116,6 +170,29 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 			}
 		}
 		log.Printf("Watch channel for %s closed, restarting watch.", clusterContext)
+	}
+}
+
+func WatchAllContexts(ctx context.Context, indexer *ClusterIndexer) {
+	clientsAdded, clientsDeleted := watchClients(ctx)
+	watchClusterStopFns := make(map[string]func())
+	for {
+		select {
+		case ev := <-clientsAdded:
+			log.Printf("Discovered kube context %s", ev.contextName)
+			watchCtx, cancel := context.WithCancel(ctx)
+			watchClusterStopFns[ev.contextName] = cancel
+			go func() {
+				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer)
+				<-ctx.Done()
+				indexer.DeleteContext(ev.contextName)
+			}()
+		case ev := <-clientsDeleted:
+			log.Printf("Deleted kube context %s", ev.contextName)
+			watchClusterStopFns[ev.contextName]()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

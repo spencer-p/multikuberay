@@ -67,15 +67,10 @@ func main() {
 }
 
 func serveMain() {
-	clients, err := discoverKubeconfigs()
-	if err != nil {
-		log.Fatalf("failed to get contexts: %v", err)
-	}
-
 	ctx := context.Background()
 	portMapper = NewPortAllocater(8270)
 	indexer = NewClusterIndexer(portMapper)
-	go WatchAll(ctx, clients, indexer)
+	go WatchAllContexts(ctx, indexer)
 
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/dash/{uid}", handleDashboard)
@@ -87,7 +82,7 @@ func serveMain() {
 	})
 
 	log.Println("Server listening on port 8080")
-	err = http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
 	log.Printf("ListenAndServe: %v", err)
 }
 

@@ -65,9 +65,16 @@ func (c *ClusterIndexer) Delete(contextName string, uid string) {
 }
 
 func (c *ClusterIndexer) DeleteContext(name string) {
+	// Use the cluster specific delete func to make sure we deallocate ports and
+	// clean up the port forwarding go routines.
 	for uid := range c.clusterTree[name] {
 		c.Delete(name, uid)
 	}
+
+	// Then (safely) remove the empty map.
+	c.m.Lock()
+	defer c.m.Unlock()
+	delete(c.clusterTree, name)
 }
 
 func (c *ClusterIndexer) List() map[string]map[string]RayClusterHandle {
