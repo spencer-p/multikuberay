@@ -124,13 +124,19 @@ func discoverRayClusters(clientset *kubernetes.Clientset) ([]v1.Service, error) 
 }
 
 func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes.Clientset, indexer *ClusterIndexer) {
-	initialList, err := kc.CoreV1().Services(v1.NamespaceAll).List(ctx, metav1.ListOptions{
-		ResourceVersion: "0",
-		LabelSelector:   "ray.io/node-type=head",
-	})
-	if err != nil {
-		log.Printf("Error getting initial service list: %v", err)
-		return
+	var initialList *corev1.ServiceList
+	for {
+		var err error
+		initialList, err = kc.CoreV1().Services(v1.NamespaceAll).List(ctx, metav1.ListOptions{
+			ResourceVersion: "0",
+			LabelSelector:   "ray.io/node-type=head",
+		})
+		if err == nil {
+			break
+		} else {
+			log.Printf("Error getting initial service list: %v. Retrying...", err)
+			<-time.After(5 * time.Second)
+		}
 	}
 
 	resourceVersion := initialList.ResourceVersion
