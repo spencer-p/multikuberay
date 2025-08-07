@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -108,28 +109,13 @@ func watchClients(ctx context.Context) (AddedChan <-chan ClientEvent, DeletedCha
 	return added, deleted
 }
 
-// discoverRayClusters accepts a kubernetes client as an argument and finds
-// all services with the label "ray.io/node-type=head". It returns a slice of
-// v1.Service objects.
-func discoverRayClusters(clientset *kubernetes.Clientset) ([]v1.Service, error) {
-	// Find all services with the ray head node label across all namespaces
-	services, err := clientset.CoreV1().Services(v1.NamespaceAll).List(context.Background(), metav1.ListOptions{
-		LabelSelector: "ray.io/node-type=head",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("could not list services: %w", err)
-	}
-
-	return services.Items, nil
-}
-
-func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes.Clientset, indexer *ClusterIndexer) {
+func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes.Clientset, indexer *ClusterIndexer, labelSelector string, filter func(*v1.Service) bool) {
 	var initialList *corev1.ServiceList
 	for {
 		var err error
 		initialList, err = kc.CoreV1().Services(v1.NamespaceAll).List(ctx, metav1.ListOptions{
 			ResourceVersion: "0",
-			LabelSelector:   "ray.io/node-type=head",
+			LabelSelector:   labelSelector,
 		})
 		if err == nil {
 			break
@@ -141,13 +127,16 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 
 	resourceVersion := initialList.ResourceVersion
 	for _, service := range initialList.Items {
+		if !filter(&service) {
+			continue
+		}
 		log.Printf("Discovered %s from %s", service.GetName(), clusterContext)
-		indexer.Insert(makeHandle(clusterContext, kc, service))
+		indexer.Insert(ctx, makeHandle(clusterContext, kc, service))
 	}
 
 	for ctx.Err() == nil {
 		watcher, err := kc.CoreV1().Services(v1.NamespaceAll).Watch(ctx, metav1.ListOptions{
-			LabelSelector:       "ray.io/node-type=head",
+			LabelSelector:       labelSelector,
 			ResourceVersion:     resourceVersion,
 			AllowWatchBookmarks: true,
 		})
@@ -165,9 +154,14 @@ func watchRayClusters(ctx context.Context, clusterContext string, kc *kubernetes
 
 			resourceVersion = service.ResourceVersion
 
+			// Drop events for services filtered out.
+			if !filter(service) {
+				continue
+			}
+
 			switch event.Type {
 			case watch.Added:
-				indexer.Insert(makeHandle(clusterContext, kc, *service))
+				indexer.Insert(ctx, makeHandle(clusterContext, kc, *service))
 			case watch.Deleted:
 				indexer.Delete(clusterContext, string(service.UID))
 			default:
@@ -189,7 +183,8 @@ func WatchAllContexts(ctx context.Context, indexer *ClusterIndexer) {
 			watchCtx, cancel := context.WithCancel(ctx)
 			watchClusterStopFns[ev.contextName] = cancel
 			go func() {
-				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer)
+				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer, "ray.io/node-type=head", func(_ *v1.Service) bool { return true })
+				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer, "anyscale-cloud-resource-id", func(s *v1.Service) bool { return strings.HasSuffix(s.GetName(), "-head") })
 				<-ctx.Done()
 				indexer.DeleteContext(ev.contextName)
 			}()
@@ -202,23 +197,21 @@ func WatchAllContexts(ctx context.Context, indexer *ClusterIndexer) {
 	}
 }
 
-func WatchAll(ctx context.Context, clients map[string]*kubernetes.Clientset, indexer *ClusterIndexer) {
-	// In this iteration, all watches share the same context.
-	// When we are watching clustercontexts, we will have separate lifetimes.
-	for contextName, kc := range clients {
-		go func() {
-			go watchRayClusters(ctx, contextName, kc, indexer)
-			<-ctx.Done()
-			indexer.DeleteContext(contextName)
-		}()
-	}
-	<-ctx.Done()
-}
-
 func makeHandle(contextName string, kc *kubernetes.Clientset, svc corev1.Service) RayClusterHandle {
+	rayClusterName := svc.GetLabels()["ray.io/cluster"]
+	if rayClusterName == "" {
+		svcName := svc.GetName()
+		if strings.HasSuffix(svcName, "-head") {
+			rayClusterName = strings.TrimSuffix(svcName, "-head")
+		} else {
+			log.Printf("Ray service %q has a cryptic name, using as cluster name")
+			rayClusterName = svcName
+		}
+	}
+
 	return RayClusterHandle{
 		kc:             kc,
-		RayClusterName: svc.GetLabels()["ray.io/cluster"],
+		RayClusterName: rayClusterName,
 		Namespace:      svc.GetNamespace(),
 		Service:        svc.GetName(),
 		UID:            string(svc.GetUID()),

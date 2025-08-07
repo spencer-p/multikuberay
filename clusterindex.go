@@ -26,7 +26,7 @@ func NewClusterIndexer(portAllocater *PortAllocater) *ClusterIndexer {
 	}
 }
 
-func (c *ClusterIndexer) Insert(cluster RayClusterHandle) {
+func (c *ClusterIndexer) Insert(ctx context.Context, cluster RayClusterHandle) {
 	// Double check the cluster is not already allocated and mapped.
 	if c.clusterTree[cluster.ContextName] != nil {
 		if _, ok := c.clusterTree[cluster.ContextName][cluster.UID]; ok {
@@ -43,7 +43,7 @@ func (c *ClusterIndexer) Insert(cluster RayClusterHandle) {
 	c.storeCluster(cluster)
 
 	// Start a port forwarder.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	log.Printf("Forwarding %s on port %d", cluster.RayClusterName, port)
 	go PortForward(ctx, port, cluster)
 	c.forwardStopFns[cluster.UID] = cancel
