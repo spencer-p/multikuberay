@@ -53,6 +53,7 @@ func (c *ClusterIndexer) Delete(contextName string, uid string) {
 	c.m.Lock()
 	defer c.m.Unlock()
 
+	log.Printf("Deallocate %s from %s", uid, contextName)
 	c.portAlloc.Deallocate(uid)
 	c.forwardStopFns[uid]()
 	delete(c.forwardStopFns, uid)

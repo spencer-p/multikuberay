@@ -185,7 +185,7 @@ func WatchAllContexts(ctx context.Context, indexer *ClusterIndexer) {
 			go func() {
 				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer, "ray.io/node-type=head", func(_ *v1.Service) bool { return true })
 				go watchRayClusters(watchCtx, ev.contextName, ev.kc, indexer, "anyscale-cloud-resource-id", func(s *v1.Service) bool { return strings.HasSuffix(s.GetName(), "-head") })
-				<-ctx.Done()
+				<-watchCtx.Done()
 				indexer.DeleteContext(ev.contextName)
 			}()
 		case ev := <-clientsDeleted:
