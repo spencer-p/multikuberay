@@ -18,24 +18,25 @@ func PortForward(ctx context.Context, port int, handle RayClusterHandle) {
 	}
 
 	const initBackoff = 10 * time.Millisecond
-	const maxBackoff = 5 * time.Second
+	const maxBackoff = 30 * time.Second
 	backoff := initBackoff
 	lastErr := time.Now()
 
 	for ctx.Err() == nil {
 		portforwardCmd := exec.CommandContext(ctx, "kubectl", kubectlArgs...)
-		err := portforwardCmd.Run()
+		out, err := portforwardCmd.CombinedOutput()
 		if err == nil {
 			continue
 		}
 
 		log.Printf("port forward %s/%s/%s failed: %v", handle.ContextName, handle.Namespace, handle.RayClusterName, err)
+		log.Printf("port forward output: %s", out)
 		if ctx.Err() != nil {
 			return
 		}
 
 		now := time.Now()
-		if now.Sub(lastErr) > 30*time.Second {
+		if now.Sub(lastErr) > 1*time.Minute {
 			backoff = initBackoff
 		} else {
 			backoff = min(2*backoff, maxBackoff)
